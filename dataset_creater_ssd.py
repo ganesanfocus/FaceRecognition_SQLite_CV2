@@ -1,4 +1,4 @@
-# dataset_creator.py
+# dataset_creator_ssd.py
 import cv2
 import numpy as np
 import sqlite3

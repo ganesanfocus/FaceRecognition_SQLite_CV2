@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Customer Order Management - Face Recognition</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+      min-height: 100vh;
+      color: #1a202c;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+
+    .header {
+      background: white;
+      border-radius: 16px;
+      padding: 24px 32px;
+      margin-bottom: 24px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #1a202c;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header h1::before {
+      content: "👤";
+      font-size: 32px;
+    }
+
+    .scan-btn {
+      padding: 14px 32px;
+      font-size: 16px;
+      font-weight: 600;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    }
+
+    .scan-btn.start {
+      background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+      color: white;
+    }
+
+    .scan-btn.start:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(6, 182, 212, 0.4);
+    }
+
+    .scan-btn.scanning {
+      background: #f59e0b;
+      color: white;
+      animation: pulse 2s infinite;
+    }
+
+    .scan-btn.success {
+      background: #10b981;
+      color: white;
+    }
+
+    .scan-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .register-btn {
+      padding: 14px 28px;
+      font-size: 16px;
+      font-weight: 600;
+      border: 2px solid #06b6d4;
+      background: white;
+      color: #06b6d4;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .register-btn:hover {
+      background: #06b6d4;
+      color: white;
+      transform: translateY(-2px);
+    }
+
+    .button-group {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    /* Modal Styles */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+    }
+
+    .modal.show {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 16px;
+      padding: 32px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+
+    .modal-header h2 {
+      font-size: 24px;
+      color: #1a202c;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 28px;
+      color: #9ca3af;
+      cursor: pointer;
+      line-height: 1;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+
+    .close-btn:hover {
+      background: #f3f4f6;
+      color: #1a202c;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #374151;
+      font-size: 14px;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 12px 16px;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 15px;
+      transition: all 0.2s;
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: #06b6d4;
+      box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+    }
+
+    .form-group .required {
+      color: #ef4444;
+    }
+
+    .submit-btn {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .submit-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(6, 182, 212, 0.4);
+    }
+
+    .submit-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .registration-progress {
+      display: none;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .registration-progress.show {
+      display: block;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: #e5e7eb;
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 16px 0;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+      transition: width 0.3s ease;
+    }
+
+    .progress-text {
+      font-weight: 600;
+      color: #06b6d4;
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    .main-content {
+      display: grid;
+      grid-template-columns: 1fr 480px;
+      gap: 24px;
+    }
+
+    .panel {
+      background: white;
+      border-radius: 16px;
+      padding: 28px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid #f3f4f6;
+    }
+
+    .panel-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: #1a202c;
+    }
+
+    .status-badge {
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-badge.idle {
+      background: #e5e7eb;
+      color: #6b7280;
+    }
+
+    .status-badge.scanning {
+      background: #fef3c7;
+      color: #d97706;
+      animation: pulse 2s infinite;
+    }
+
+    .status-badge.recognized {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .status-badge.timeout {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .status-badge::before {
+      content: "●";
+      font-size: 16px;
+    }
+
+    .customer-info {
+      background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .customer-info.show {
+      display: block;
+    }
+
+    .customer-info h3 {
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    .customer-info p {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    .camera-container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .camera-view {
+      flex: 1;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #000;
+      position: relative;
+      min-height: 400px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .camera-placeholder {
+      text-align: center;
+      color: #9ca3af;
+      padding: 40px;
+    }
+
+    .camera-placeholder svg {
+      width: 80px;
+      height: 80px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+
+    .camera-view img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .camera-view.hidden img {
+      display: none;
+    }
+
+    .timeout-message {
+      background: #fee2e2;
+      color: #991b1b;
+      padding: 16px;
+      border-radius: 8px;
+      margin-top: 16px;
+      display: none;
+      text-align: center;
+      font-weight: 600;
+    }
+
+    .timeout-message.show {
+      display: block;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    thead {
+      background: #f9fafb;
+      position: sticky;
+      top: 0;
+    }
+
+    thead th {
+      text-align: left;
+      padding: 12px;
+      font-weight: 600;
+      color: #6b7280;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 2px solid #e5e7eb;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid #f3f4f6;
+      transition: background 0.2s;
+    }
+
+    tbody tr:hover {
+      background: #f9fafb;
+    }
+
+    tbody td {
+      padding: 14px 12px;
+    }
+
+    .amount {
+      font-weight: 700;
+      color: #1a202c;
+      font-size: 15px;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .pill.paid { background: #d1fae5; color: #065f46; }
+    .pill.pending { background: #fef3c7; color: #d97706; }
+    .pill.failed { background: #fee2e2; color: #991b1b; }
+    .pill.refunded { background: #dbeafe; color: #1e40af; }
+
+    .pill.processing { background: #dbeafe; color: #1e40af; }
+    .pill.shipped { background: #e0e7ff; color: #3730a3; }
+    .pill.delivered { background: #d1fae5; color: #065f46; }
+    .pill.delayed { background: #fef3c7; color: #d97706; }
+    .pill.cancelled { background: #fee2e2; color: #991b1b; }
+
+    .table-wrapper {
+      overflow-x: auto;
+      max-height: 500px;
+      overflow-y: auto;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #9ca3af;
+    }
+
+    .empty-state svg {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 16px;
+      opacity: 0.3;
+    }
+
+    .empty-state h3 {
+      font-size: 18px;
+      margin-bottom: 8px;
+      color: #6b7280;
+    }
+
+    .empty-state p {
+      font-size: 14px;
+    }
+
+    @media (max-width: 1200px) {
+      .main-content {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Customer Order Management</h1>
+      <div class="button-group">
+        <button class="register-btn" onclick="openRegistrationModal()">
+          <span>➕</span>
+          <span>Register New Customer</span>
+        </button>
+        <button class="scan-btn start" id="scanBtn" onclick="toggleCamera()">
+          <span id="btnIcon">📷</span>
+          <span id="btnText">Scan Customer Face</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">📦 Customer Orders</div>
+          <div class="status-badge idle" id="statusBadge">Ready</div>
+        </div>
+
+        <div class="customer-info" id="customerInfo">
+          <h3 id="customerName">—</h3>
+          <p id="customerDetail">Customer ID: —</p>
+        </div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Order No.</th>
+                <th>Customer</th>
+                <th>Phone</th>
+                <th>Amount</th>
+                <th>Payment</th>
+                <th>Status</th>
+                <th>Expected</th>
+                <th>Delivery</th>
+              </tr>
+            </thead>
+            <tbody id="ordersBody">
+              <tr>
+                <td colspan="8">
+                  <div class="empty-state">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+                    </svg>
+                    <h3>No Orders Yet</h3>
+                    <p>Scan a customer's face to view their orders</p>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel camera-container">
+        <div class="panel-header">
+          <div class="panel-title">📹 Live Camera</div>
+        </div>
+
+        <div class="camera-view hidden" id="cameraView">
+          <div class="camera-placeholder" id="cameraPlaceholder">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+            </svg>
+            <p>Camera is off</p>
+            <p style="font-size: 12px; margin-top: 8px;">Click "Scan Customer Face" to start</p>
+          </div>
+          <img id="videoFeed" alt="Video stream" style="display: none;" />
+        </div>
+
+        <div class="timeout-message" id="timeoutMessage">
+          ⚠️ No matching customer found. Please try again.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Registration Modal -->
+  <div class="modal" id="registrationModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Register New Customer</h2>
+        <button class="close-btn" onclick="closeRegistrationModal()">&times;</button>
+      </div>
+
+      <div id="registrationForm">
+        <div class="form-group">
+          <label>Customer ID <span class="required">*</span></label>
+          <input type="number" id="customerId" placeholder="Enter unique customer ID" required />
+        </div>
+
+        <div class="form-group">
+          <label>Full Name <span class="required">*</span></label>
+          <input type="text" id="customerName" placeholder="Enter customer name" required />
+        </div>
+
+        <div class="form-group">
+          <label>Age</label>
+          <input type="number" id="customerAge" placeholder="Enter age (optional)" />
+        </div>
+
+        <button class="submit-btn" onclick="startRegistration()">
+          Start Face Capture
+        </button>
+      </div>
+
+      <div class="registration-progress" id="registrationProgress">
+        <div class="progress-text" id="progressText">Capturing face data...</div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+        </div>
+        <p style="color: #6b7280; font-size: 14px; margin-top: 12px;">
+          Please look directly at the camera
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let cameraActive = false;
+    let pollInterval = null;
+    let registrationMode = false;
+    let registrationPollInterval = null;
+
+    function openRegistrationModal() {
+      document.getElementById("registrationModal").classList.add("show");
+      // Reset form
+      document.getElementById("customerId").value = "";
+      document.getElementById("customerName").value = "";
+      document.getElementById("customerAge").value = "";
+      document.getElementById("registrationForm").style.display = "block";
+      document.getElementById("registrationProgress").classList.remove("show");
+    }
+
+    function closeRegistrationModal() {
+      document.getElementById("registrationModal").classList.remove("show");
+      
+      // Stop camera if registration is active
+      if (registrationMode || cameraActive) {
+        fetch("/stop_camera").catch(e => console.error("Error stopping camera:", e));
+      }
+      
+      if (registrationPollInterval) {
+        clearInterval(registrationPollInterval);
+        registrationPollInterval = null;
+      }
+      
+      registrationMode = false;
+      cameraActive = false;
+      
+      // Reset camera view
+      resetCameraView();
+    }
+
+    async function startRegistration() {
+      // Get values
+      const idInput = document.getElementById("customerId");
+      const nameInput = document.getElementById("customerName");
+      const ageInput = document.getElementById("customerAge");
+      
+      const id = idInput.value.trim();
+      const name = nameInput.value.trim();
+      const age = ageInput.value.trim();
+
+      console.log("Input values:", { id, name, age });
+
+      // Basic validation
+      if (!id || id === "") {
+        alert("Please enter Customer ID");
+        idInput.focus();
+        return;
+      }
+
+      if (!name || name === "") {
+        alert("Please enter Customer Name");
+        nameInput.focus();
+        return;
+      }
+
+      console.log("Validation passed, starting registration...");
+
+      // Hide form, show progress
+      document.getElementById("registrationForm").style.display = "none";
+      document.getElementById("registrationProgress").classList.add("show");
+
+      // Show video feed
+      const videoFeed = document.getElementById("videoFeed");
+      const cameraView = document.getElementById("cameraView");
+      const placeholder = document.getElementById("cameraPlaceholder");
+      
+      cameraView.classList.remove("hidden");
+      placeholder.style.display = "none";
+      videoFeed.style.display = "block";
+
+      try {
+        console.log("Sending POST request to /start_registration");
+        const res = await fetch("/start_registration", {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ 
+            id: id, 
+            name: name, 
+            age: age || null 
+          })
+        });
+
+        console.log("Response status:", res.status);
+        const data = await res.json();
+        console.log("Registration response:", data);
+
+        if (data.status === "started") {
+          console.log("Registration started successfully");
+          registrationMode = true;
+          videoFeed.src = "/video_feed?" + new Date().getTime();
+          
+          // Start polling registration status
+          registrationPollInterval = setInterval(pollRegistrationStatus, 300);
+        } else if (data.status === "error") {
+          console.error("Registration error:", data.message);
+          alert("Error: " + (data.message || "Failed to start registration"));
+          document.getElementById("registrationForm").style.display = "block";
+          document.getElementById("registrationProgress").classList.remove("show");
+          resetCameraView();
+        } else {
+          console.error("Unknown response:", data);
+          alert(data.message || "Failed to start registration");
+          document.getElementById("registrationForm").style.display = "block";
+          document.getElementById("registrationProgress").classList.remove("show");
+          resetCameraView();
+        }
+      } catch (e) {
+        console.error("Registration error:", e);
+        alert("Failed to start registration. Check console for details.");
+        document.getElementById("registrationForm").style.display = "block";
+        document.getElementById("registrationProgress").classList.remove("show");
+        resetCameraView();
+      }
+    }
+
+    async function pollRegistrationStatus() {
+      try {
+        const res = await fetch("/registration_status");
+        const status = await res.json();
+
+        const progressFill = document.getElementById("progressFill");
+        const progressText = document.getElementById("progressText");
+
+        if (status.active) {
+          const percentage = (status.samples / status.max_samples) * 100;
+          progressFill.style.width = percentage + "%";
+          progressText.textContent = `Capturing: ${status.samples}/${status.max_samples} samples`;
+        } else if (status.status === "registration_complete") {
+          progressFill.style.width = "100%";
+          progressText.textContent = "✅ Registration Complete! Training model...";
+          
+          clearInterval(registrationPollInterval);
+          
+          // Show success and close modal after 3 seconds
+          setTimeout(() => {
+            closeRegistrationModal();
+            alert("Customer registered and trained successfully! Ready to recognize.");
+          }, 3000);
+        }
+      } catch (e) {
+        console.error("Poll error:", e);
+      }
+    }
+
+    function paymentClass(status) {
+      status = (status || "").toLowerCase();
+      if (status === "paid") return "pill paid";
+      if (status === "pending") return "pill pending";
+      if (status === "failed") return "pill failed";
+      if (status === "refunded") return "pill refunded";
+      return "pill";
+    }
+
+    function orderClass(status) {
+      status = (status || "").toLowerCase();
+      if (status === "processing") return "pill processing";
+      if (status === "shipped") return "pill shipped";
+      if (status === "delivered") return "pill delivered";
+      if (status === "delayed") return "pill delayed";
+      if (status === "cancelled") return "pill cancelled";
+      return "pill";
+    }
+
+    async function toggleCamera() {
+      const btn = document.getElementById("scanBtn");
+      const videoFeed = document.getElementById("videoFeed");
+      const cameraView = document.getElementById("cameraView");
+      const placeholder = document.getElementById("cameraPlaceholder");
+      const timeoutMsg = document.getElementById("timeoutMessage");
+      const customerInfo = document.getElementById("customerInfo");
+      const tbody = document.getElementById("ordersBody");
+      const statusBadge = document.getElementById("statusBadge");
+
+      if (!cameraActive) {
+        // Clear previous customer data
+        customerInfo.classList.remove("show");
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8">
+              <div class="empty-state">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+                </svg>
+                <h3>Scanning...</h3>
+                <p>Waiting for customer recognition</p>
+              </div>
+            </td>
+          </tr>
+        `;
+
+        // Start camera
+        try {
+          const res = await fetch("/start_camera");
+          const data = await res.json();
+          
+          if (data.status === "started") {
+            cameraActive = true;
+            
+            // Update button
+            btn.className = "scan-btn scanning";
+            btn.querySelector("#btnIcon").textContent = "⏱️";
+            btn.querySelector("#btnText").textContent = "Scanning...";
+            
+            // Update status badge
+            statusBadge.className = "status-badge scanning";
+            statusBadge.textContent = "Scanning...";
+            
+            // Show video feed
+            cameraView.classList.remove("hidden");
+            placeholder.style.display = "none";
+            videoFeed.style.display = "block";
+            videoFeed.src = "/video_feed?" + new Date().getTime();
+            
+            // Hide timeout message
+            timeoutMsg.classList.remove("show");
+            
+            // Start polling
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(pollStatus, 500);
+          }
+        } catch (e) {
+          console.error("Error starting camera:", e);
+        }
+      } else {
+        // Stop camera manually
+        await fetch("/stop_camera");
+        resetCamera();
+      }
+    }
+
+    async function pollStatus() {
+      try {
+        const res = await fetch("/camera_status");
+        const status = await res.json();
+
+        const btn = document.getElementById("scanBtn");
+        const statusBadge = document.getElementById("statusBadge");
+        const videoFeed = document.getElementById("videoFeed");
+        const timeoutMsg = document.getElementById("timeoutMessage");
+
+        if (status.status === "recognized") {
+          // Success
+          btn.className = "scan-btn success";
+          btn.querySelector("#btnIcon").textContent = "✅";
+          btn.querySelector("#btnText").textContent = "Customer Recognized";
+          
+          statusBadge.className = "status-badge recognized";
+          statusBadge.textContent = "Recognized";
+          
+          cameraActive = false;
+          clearInterval(pollInterval);
+          
+          // Load orders
+          updateOrders();
+          
+          // Reset button after 3 seconds
+          setTimeout(() => {
+            btn.className = "scan-btn start";
+            btn.querySelector("#btnIcon").textContent = "📷";
+            btn.querySelector("#btnText").textContent = "Scan Customer Face";
+            resetCameraView();
+          }, 3000);
+        } 
+        else if (status.status === "timeout") {
+          // Timeout
+          statusBadge.className = "status-badge timeout";
+          statusBadge.textContent = "Timeout";
+          
+          timeoutMsg.classList.add("show");
+          
+          resetCamera();
+        }
+        else if (status.status === "scanning") {
+          statusBadge.className = "status-badge scanning";
+          statusBadge.textContent = "Scanning...";
+        }
+      } catch (e) {
+        console.error("Poll error:", e);
+      }
+    }
+
+    function resetCamera() {
+      const btn = document.getElementById("scanBtn");
+      const statusBadge = document.getElementById("statusBadge");
+      const tbody = document.getElementById("ordersBody");
+      const customerInfo = document.getElementById("customerInfo");
+      
+      btn.className = "scan-btn start";
+      btn.querySelector("#btnIcon").textContent = "📷";
+      btn.querySelector("#btnText").textContent = "Scan Customer Face";
+      
+      statusBadge.className = "status-badge idle";
+      statusBadge.textContent = "Ready";
+      
+      // Clear customer info and orders on timeout
+      customerInfo.classList.remove("show");
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="8">
+            <div class="empty-state">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+              </svg>
+              <h3>No Orders Yet</h3>
+              <p>Scan a customer's face to view their orders</p>
+            </div>
+          </td>
+        </tr>
+      `;
+      
+      cameraActive = false;
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+      
+      resetCameraView();
+    }
+
+    function resetCameraView() {
+      const videoFeed = document.getElementById("videoFeed");
+      const cameraView = document.getElementById("cameraView");
+      const placeholder = document.getElementById("cameraPlaceholder");
+      
+      videoFeed.src = "";
+      videoFeed.style.display = "none";
+      placeholder.style.display = "block";
+      cameraView.classList.add("hidden");
+    }
+
+    async function updateOrders() {
+      try {
+        const res = await fetch("/current_orders");
+        const data = await res.json();
+
+        const tbody = document.getElementById("ordersBody");
+        const customerInfo = document.getElementById("customerInfo");
+        const customerName = document.getElementById("customerName");
+        const customerDetail = document.getElementById("customerDetail");
+
+        if (data.face_id && data.name) {
+          customerInfo.classList.add("show");
+          customerName.textContent = data.name;
+          customerDetail.textContent = `Customer ID: ${data.face_id}`;
+        }
+
+        const orders = data.orders || [];
+        if (orders.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="8">
+                <div class="empty-state">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                  </svg>
+                  <h3>No Orders Found</h3>
+                  <p>This customer has no orders in the system</p>
+                </div>
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        let rows = "";
+        orders.forEach((o) => {
+          rows += `<tr>
+            <td><strong>${o.order_number}</strong></td>
+            <td>${o.cust_name}</td>
+            <td>${o.phone}</td>
+            <td class="amount">$${o.amount.toFixed(2)}</td>
+            <td><span class="${paymentClass(o.payment_status)}">${o.payment_status}</span></td>
+            <td><span class="${orderClass(o.order_status)}">${o.order_status}</span></td>
+            <td>${o.expected_delivery_date || "—"}</td>
+            <td>${o.delivery_date || "—"}</td>
+          </tr>`;
+        });
+        tbody.innerHTML = rows;
+      } catch (e) {
+        console.error("Error updating orders:", e);
+      }
+    }
+
+    // Initial load
+    updateOrders();
+  </script>
+</body>
+</html>
