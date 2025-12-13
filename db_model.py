@@ -125,6 +125,16 @@ class OrderDatabase:
         self.close()
         return results
     
+    def get_orders_by_customer_name(self, customer_name):
+        """Get orders by exact customer name"""
+        self.connect()
+        self.cursor.execute('''
+            SELECT * FROM orders WHERE cust_name = ?
+        ''', (customer_name,))
+        results = self.cursor.fetchall()
+        self.close()
+        return results
+    
     def get_all_orders(self):
         """Get all orders"""
         self.connect()
@@ -134,7 +144,7 @@ class OrderDatabase:
         return results
     
     def search_by_customer_name(self, name):
-        """Search orders by customer name"""
+        """Search orders by customer name (partial match)"""
         self.connect()
         self.cursor.execute('''
             SELECT * FROM orders WHERE cust_name LIKE ?

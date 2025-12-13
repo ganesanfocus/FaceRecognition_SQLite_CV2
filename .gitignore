@@ -2,3 +2,4 @@
 venv
 dataset/
 database.db
+__pycache__/*

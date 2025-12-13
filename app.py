@@ -5,6 +5,8 @@ import sqlite3
 from deepface import DeepFace
 from flask import Flask, render_template, Response, jsonify
 from db_model import OrderDatabase
+from datetime import datetime, timedelta
+import random
 
 # ---------------- CONFIG ----------------
 SSD_PROTO = "models/deploy.prototxt.txt"
@@ -69,6 +71,57 @@ def get_profile(pid):
     row = cur.fetchone()
     conn.close()
     return row
+
+
+def create_sample_orders_for_customer(customer_id, customer_name, phone_number):
+    """Create 2-3 sample orders for a newly registered customer"""
+    orders_db = OrderDatabase()
+    orders_db.connect()
+    
+    # Generate 2-3 random orders
+    num_orders = random.randint(2, 3)
+    base_date = datetime.now()
+    
+    payment_statuses = ["Paid", "Pending"]
+    order_statuses = ["Processing", "Shipped", "Delivered", "Delayed"]
+    delay_reasons = ["Weather conditions", "Out of stock", "Courier delay"]
+    
+    created_orders = []
+    
+    for i in range(num_orders):
+        order_num = f"ORD{base_date.year}{base_date.month:02d}{customer_id:04d}{i+1:02d}"
+        amount = round(random.uniform(75, 450), 2)
+        payment = random.choice(payment_statuses)
+        status = random.choice(order_statuses)
+        
+        # Dates
+        expected_delivery = (base_date + timedelta(days=random.randint(3, 7))).strftime("%Y-%m-%d")
+        
+        if status == "Delivered":
+            delivery = (base_date - timedelta(days=random.randint(1, 3))).strftime("%Y-%m-%d")
+            delay = None
+        elif status == "Delayed":
+            delivery = None
+            delay = random.choice(delay_reasons)
+        else:
+            delivery = None
+            delay = None
+        
+        orders_db.cursor.execute('''
+            INSERT INTO orders (cust_name, phone, order_number, amount, payment_status, 
+                              order_status, delivery_date, expected_delivery_date, delay_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (customer_name, phone_number, order_num, amount, payment, status,
+              delivery, expected_delivery, delay))
+        
+        created_orders.append(order_num)
+        print(f"  ✅ Created order: {order_num} - ${amount:.2f} - {status}")
+    
+    orders_db.conn.commit()
+    orders_db.close()
+    
+    print(f"🎉 Created {num_orders} sample orders for {customer_name}")
+    return created_orders
 
 
 def train_model():
@@ -158,7 +211,6 @@ def train_model():
 ssd_net = load_ssd()
 db_embeddings, db_labels = load_embeddings()
 orders_db = OrderDatabase()
-# DON'T keep camera open globally - open/close as needed
 
 # Shared state for web polling
 current_face_id = None
@@ -185,9 +237,9 @@ def index():
     return render_template("index.html")
 
 
-@app.route("/check_face", methods=["POST"])
-def check_face():
-    """Check if a face shown to camera is already registered"""
+@app.route("/check_face_during_registration", methods=["POST"])
+def check_face_during_registration():
+    """Check if face is already registered before starting registration"""
     from flask import request
     import base64
     
@@ -208,7 +260,7 @@ def check_face():
         boxes = detect_faces_ssd(ssd_net, frame)
         
         if not boxes:
-            return jsonify({"status": "no_face", "message": "No face detected"})
+            return jsonify({"status": "no_face", "message": "No face detected. Please ensure your face is clearly visible."})
         
         # Use first face
         (x1, y1, x2, y2) = boxes[0]
@@ -234,7 +286,7 @@ def check_face():
         
         # Check against existing embeddings
         if len(db_embeddings) == 0:
-            return jsonify({"status": "new_face", "message": "No registered customers yet"})
+            return jsonify({"status": "new_face", "message": "No registered customers yet. Proceeding with registration."})
         
         dists = np.linalg.norm(db_embeddings - emb, axis=1)
         idx = np.argmin(dists)
@@ -246,19 +298,21 @@ def check_face():
             profile = get_profile(pid)
             if profile:
                 name = profile[1]
+                age = profile[2] if len(profile) > 2 else None
                 print(f"⚠️ Face already registered: {name} (ID={pid}, Distance={dist:.2f})")
                 return jsonify({
                     "status": "already_registered",
                     "customer_id": pid,
                     "customer_name": name,
-                    "distance": float(dist),
-                    "message": f"This person is already registered as '{name}' (ID: {pid})"
+                    "customer_age": age,
+                    "distance": float(dist)
                 })
         
         # Face is new
+        print(f"✅ New face detected (closest match distance: {dist:.2f})")
         return jsonify({
             "status": "new_face",
-            "message": "Face not found in database. Proceed with registration.",
+            "message": "Face verified as new. Proceeding with registration.",
             "closest_match_distance": float(dist)
         })
         
@@ -278,31 +332,25 @@ def start_registration():
         data = request.json
         print(f"📝 Registration request received: {data}")
         
-        registration_id = data.get("id")
         registration_name = data.get("name")
         registration_age = data.get("age") or None
+        phone_number = data.get("phone") or f"555-{random.randint(1000, 9999)}"
         
-        if not registration_id or not registration_name:
+        if not registration_name:
             print("❌ Missing required fields")
-            return jsonify({"status": "error", "message": "ID and Name are required"})
+            return jsonify({"status": "error", "message": "Name is required"})
         
-        # Check if this ID already exists
+        # Auto-generate next available ID
         try:
             conn = sqlite3.connect(STUDENT_DB_PATH)
             cursor = conn.cursor()
-            cursor.execute("SELECT Name FROM STUDENTS WHERE id = ?", (registration_id,))
-            existing = cursor.fetchone()
+            cursor.execute("SELECT MAX(id) FROM STUDENTS")
+            max_id = cursor.fetchone()[0]
+            registration_id = (max_id + 1) if max_id else 1
             conn.close()
-            
-            if existing:
-                existing_name = existing[0]
-                print(f"⚠️ Customer ID {registration_id} already exists: {existing_name}")
-                return jsonify({
-                    "status": "error", 
-                    "message": f"Customer ID {registration_id} is already registered as '{existing_name}'. Please use a different ID or update the existing customer."
-                })
+            print(f"📋 Auto-generated ID: {registration_id}")
         except Exception as e:
-            print(f"❌ Database check error: {e}")
+            print(f"❌ Database error: {e}")
             return jsonify({"status": "error", "message": f"Database error: {str(e)}"})
         
         # Start registration mode
@@ -315,20 +363,24 @@ def start_registration():
         # Create dataset directory if not exists
         os.makedirs("dataset", exist_ok=True)
         
-        # Insert into database (we already checked it doesn't exist)
+        # Insert into database
         try:
             conn = sqlite3.connect(STUDENT_DB_PATH)
             conn.execute("INSERT INTO STUDENTS (id, Name, age) VALUES (?, ?, ?)", 
                         (registration_id, registration_name, registration_age))
             conn.commit()
             conn.close()
-            print(f"✅ Database updated successfully")
+            print(f"✅ Database updated successfully - ID: {registration_id}, Name: {registration_name}")
         except Exception as e:
             print(f"❌ Database error: {e}")
             return jsonify({"status": "error", "message": f"Database error: {str(e)}"})
         
+        # Store phone for order creation
+        global registration_phone
+        registration_phone = phone_number
+        
         print(f"📹 Registration started for {registration_name} (ID: {registration_id})")
-        return jsonify({"status": "started"})
+        return jsonify({"status": "started", "customer_id": registration_id})
     
     except Exception as e:
         print(f"❌ Registration error: {e}")
@@ -398,7 +450,7 @@ def camera_status():
 
 def gen_frames():
     global current_face_id, current_face_name, current_orders, camera_active, camera_start_time, recognition_status
-    global registration_mode, registration_id, registration_name, captured_samples, MAX_SAMPLES
+    global registration_mode, registration_id, registration_name, captured_samples, MAX_SAMPLES, registration_phone
 
     # Open camera only when starting
     cam = cv2.VideoCapture(0)
@@ -446,8 +498,17 @@ def gen_frames():
                     try:
                         train_model()
                         print("✅ Training completed successfully!")
+                        
+                        # Create sample orders for the new customer
+                        print(f"📦 Creating sample orders for {registration_name}...")
+                        create_sample_orders_for_customer(
+                            registration_id, 
+                            registration_name, 
+                            registration_phone
+                        )
+                        
                     except Exception as e:
-                        print(f"❌ Training failed: {e}")
+                        print(f"❌ Training/Order creation failed: {e}")
                     
                     break
             
@@ -516,10 +577,12 @@ def gen_frames():
 
                             current_face_id = pid
                             current_face_name = name
-                            current_orders = orders_db.get_all_orders()
+                            # Load orders for this specific customer
+                            current_orders = orders_db.get_orders_by_customer_name(name)
                             recognition_status = "recognized"
 
-                            print(f"✅ FINAL MATCH: {name} (ID={pid}, Distance={dist:.2f})\n")
+                            print(f"✅ FINAL MATCH: {name} (ID={pid}, Distance={dist:.2f})")
+                            print(f"📦 Found {len(current_orders)} orders for {name}\n")
 
                             # Stop camera after recognition
                             camera_active = False
@@ -559,23 +622,29 @@ def video_feed():
 
 @app.route("/current_orders")
 def current_orders_api():
-    # Convert orders rows to list of dicts
+    # Get orders for the recognized customer
     orders_list = []
-    for o in current_orders:
-        orders_list.append(
-            {
-                "order_id": o[0],
-                "cust_name": o[1],
-                "phone": o[2],
-                "order_number": o[3],
-                "amount": o[4],
-                "payment_status": o[5],
-                "order_status": o[6],
-                "delivery_date": o[7],
-                "expected_delivery_date": o[8],
-                "delay_reason": o[9],
-            }
-        )
+    
+    if current_face_id and current_face_name:
+        # Get orders for this specific customer by name
+        customer_orders = orders_db.get_orders_by_customer_name(current_face_name)
+        
+        for o in customer_orders:
+            orders_list.append(
+                {
+                    "order_id": o[0],
+                    "cust_name": o[1],
+                    "phone": o[2],
+                    "order_number": o[3],
+                    "amount": o[4],
+                    "payment_status": o[5],
+                    "order_status": o[6],
+                    "delivery_date": o[7],
+                    "expected_delivery_date": o[8],
+                    "delay_reason": o[9],
+                }
+            )
+    
     return jsonify(
         {
             "face_id": current_face_id,
