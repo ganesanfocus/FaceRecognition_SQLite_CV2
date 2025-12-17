@@ -1,4 +1,4 @@
-# app.py - FINAL VERSION WITH CONSECUTIVE MATCH LOGIC (Reduces Wrong Predictions)
+# app.py - FINAL IMPROVED VERSION (Based on your working code)
 
 import cv2
 import numpy as np
@@ -22,14 +22,13 @@ STUDENT_DB_PATH = "database.db"
 # Use Facenet512 for best accuracy
 USE_FACENET512 = True
 MODEL_NAME = "Facenet512" if USE_FACENET512 else "Facenet"
-FACENET_THRESHOLD = 0.95 if USE_FACENET512 else 0.92  # Tightened to reduce false positives
+# FACENET_THRESHOLD = 1.04 if USE_FACENET512 else 0.92  # Lower = stricter
+FACENET_THRESHOLD = 0.95   # Stricter – reduces false positives
+
 
 # Registration quality control
-MIN_FACE_SIZE_REG = 160
-STANDARD_FACE_SIZE = (160, 160)
-
-# Consecutive match requirement
-REQUIRED_CONSECUTIVE_MATCHES = 3  # Need 3 frames in a row to confirm identity
+MIN_FACE_SIZE_REG = 160        # Minimum face width/height in pixels during registration
+STANDARD_FACE_SIZE = (160, 160)  # Resize all face crops to this size
 
 # ---------------- INIT MODELS ----------------
 def load_ssd():
@@ -63,6 +62,7 @@ def load_embeddings():
     embeddings = data["embeddings"].astype("float32")
     labels = data["labels"]
 
+    # Pre-normalize all embeddings
     norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
     normalized_embeddings = embeddings / (norms + 1e-8)
 
@@ -160,7 +160,7 @@ def train_model():
             )
             emb = rep[0]["embedding"] if isinstance(rep, list) else rep["embedding"]
             emb = np.array(emb, dtype="float32")
-            emb = emb / (np.linalg.norm(emb) + 1e-8)
+            emb = emb / (np.linalg.norm(emb) + 1e-8)  # Normalize
             embeddings.append(emb)
             labels.append(person_id)
             print(f"[INFO] Processed {filename} -> ID {person_id}")
@@ -204,18 +204,12 @@ registration_phone = None
 captured_samples = 0
 MAX_SAMPLES = 30
 
-# Consecutive match tracking
-candidate_id = None
-consecutive_matches = 0
-
 # ---------------- FLASK APP ----------------
 app = Flask(__name__)
 
 @app.route("/")
 def index():
     return render_template("index.html")
-
-# ... (All your existing routes: check_face_during_registration, start_registration, etc. remain unchanged)
 
 @app.route("/check_face_during_registration", methods=["POST"])
 def check_face_during_registration():
@@ -295,7 +289,6 @@ def check_face_during_registration():
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)})
 
-
 @app.route("/start_registration", methods=["POST"])
 def start_registration():
     global registration_mode, camera_active, recognition_status
@@ -337,7 +330,6 @@ def start_registration():
         print(f"Reg error: {e}")
         return jsonify({"status": "error", "message": str(e)})
 
-
 @app.route("/registration_status")
 def registration_status():
     return jsonify({
@@ -350,12 +342,9 @@ def registration_status():
 @app.route("/start_camera")
 def start_camera():
     global camera_active, camera_start_time, recognition_status
-    global candidate_id, consecutive_matches  # Reset on new scan
     camera_active = True
     camera_start_time = cv2.getTickCount() / cv2.getTickFrequency()
     recognition_status = "scanning"
-    candidate_id = None
-    consecutive_matches = 0
     print("Camera started - scanning...")
     return jsonify({"status": "started"})
 
@@ -387,7 +376,6 @@ def camera_status():
 def gen_frames():
     global current_face_id, current_face_name, current_orders, camera_active, recognition_status
     global registration_mode, captured_samples, registration_id, registration_name
-    global candidate_id, consecutive_matches
 
     cam = cv2.VideoCapture(0)
     if not cam.isOpened():
@@ -401,7 +389,6 @@ def gen_frames():
                 break
 
             if registration_mode:
-                # (Your existing registration logic - unchanged)
                 boxes = detect_faces_ssd(ssd_net, frame)
                 for (x1, y1, x2, y2) in boxes:
                     face_w = x2 - x1
@@ -451,8 +438,6 @@ def gen_frames():
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 boxes = detect_faces_ssd(ssd_net, frame)
 
-                match_found_this_frame = False
-
                 for (x1, y1, x2, y2) in boxes:
                     face_rgb = rgb[y1:y2, x1:x2]
                     if face_rgb.size == 0:
@@ -489,45 +474,24 @@ def gen_frames():
                     print(f"[RECOG] Best: ID {best['id']} - Dist {best['dist']:.3f}")
 
                     if best['dist'] < FACENET_THRESHOLD:
-                        match_found_this_frame = True
-
-                        if candidate_id is None or candidate_id == best['id']:
-                            candidate_id = best['id']
-                            consecutive_matches += 1
-                            print(f"Consecutive match {consecutive_matches}/{REQUIRED_CONSECUTIVE_MATCHES} for ID {candidate_id}")
-                        else:
-                            # Different person - reset
-                            candidate_id = best['id']
-                            consecutive_matches = 1
-
-                        # Draw candidate name with count
-                        profile = get_profile(candidate_id)
-                        name = profile[1] if profile else "Unknown"
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 3)
-                        cv2.putText(frame, f"{name} ({consecutive_matches}/{REQUIRED_CONSECUTIVE_MATCHES})",
-                                    (x1, y1-15), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 3)
-
-                        if consecutive_matches >= REQUIRED_CONSECUTIVE_MATCHES:
-                            current_face_id = candidate_id
+                        profile = get_profile(best['id'])
+                        if profile:
+                            name = profile[1]
+                            current_face_id = best['id']
                             current_face_name = name
                             current_orders = orders_db.get_orders_by_customer_name(name)
                             recognition_status = "recognized"
 
                             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 4)
-                            cv2.putText(frame, f"{name} CONFIRMED", (x1, y1-15),
+                            cv2.putText(frame, f"{name} ({best['dist']:.2f})", (x1, y1-15),
                                         cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)
-                            print(f"✅ CONFIRMED MATCH: {name} (ID: {candidate_id})")
+                            print(f"MATCH: {name} (ID: {best['id']})")
                             camera_active = False
                             break
                     else:
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 165, 255), 2)
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 3)
                         cv2.putText(frame, f"Unknown ({best['dist']:.2f})", (x1, y1-15),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2)
-
-                # Reset if no good match this frame
-                if not match_found_this_frame:
-                    candidate_id = None
-                    consecutive_matches = 0
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 3)
 
                 time_left = int(30 - elapsed)
                 cv2.putText(frame, f"Time: {time_left}s", (10, 30),
