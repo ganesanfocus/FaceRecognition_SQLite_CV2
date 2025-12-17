@@ -1,4 +1,4 @@
-# app.py - FINAL IMPROVED VERSION (Based on your working code)
+# app.py - FIXED AND IMPROVED VERSION
 
 import cv2
 import numpy as np
@@ -19,16 +19,11 @@ CONF_THRESHOLD = 0.5
 EMBEDDINGS_PATH = "recognizer/facenet_embeddings.npz"
 STUDENT_DB_PATH = "database.db"
 
-# Use Facenet512 for best accuracy
-USE_FACENET512 = True
+# Use L2-normalized Euclidean distance (recommended for FaceNet)
+FACENET_THRESHOLD = 0.92  # Good starting point: lower = stricter. Tune between 0.8–1.0
+USE_FACENET512 = False    # Set to True for much better accuracy (threshold ~1.04)
+
 MODEL_NAME = "Facenet512" if USE_FACENET512 else "Facenet"
-# FACENET_THRESHOLD = 1.04 if USE_FACENET512 else 0.92  # Lower = stricter
-FACENET_THRESHOLD = 0.95   # Stricter – reduces false positives
-
-
-# Registration quality control
-MIN_FACE_SIZE_REG = 160        # Minimum face width/height in pixels during registration
-STANDARD_FACE_SIZE = (160, 160)  # Resize all face crops to this size
 
 # ---------------- INIT MODELS ----------------
 def load_ssd():
@@ -62,12 +57,11 @@ def load_embeddings():
     embeddings = data["embeddings"].astype("float32")
     labels = data["labels"]
 
-    # Pre-normalize all embeddings
+    # Pre-normalize all embeddings (critical for stable distance)
     norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-    normalized_embeddings = embeddings / (norms + 1e-8)
+    normalized_embeddings = embeddings / norms
 
-    unique = np.unique(labels)
-    print(f"[INFO] Loaded {len(labels)} normalized embeddings for {len(unique)} customers")
+    print(f"[INFO] Loaded {len(labels)} embeddings for {len(np.unique(labels))} customers")
     return normalized_embeddings, labels
 
 def get_profile(pid):
@@ -125,7 +119,8 @@ def create_sample_orders_for_customer(customer_id, customer_name, phone_number):
     return created_orders
 
 def train_model():
-    print("[INFO] Retraining embeddings with alignment and normalization...")
+    print("[INFO] Training FaceNet embeddings...")
+    from deepface import DeepFace
     
     dataset_dir = "dataset"
     image_paths = [os.path.join(dataset_dir, f) for f in os.listdir(dataset_dir)
@@ -160,12 +155,15 @@ def train_model():
             )
             emb = rep[0]["embedding"] if isinstance(rep, list) else rep["embedding"]
             emb = np.array(emb, dtype="float32")
-            emb = emb / (np.linalg.norm(emb) + 1e-8)  # Normalize
+            
+            # Normalize immediately
+            emb = emb / np.linalg.norm(emb)
+            
             embeddings.append(emb)
             labels.append(person_id)
             print(f"[INFO] Processed {filename} -> ID {person_id}")
         except Exception as e:
-            print(f"[WARN] Failed embedding for {filename}: {e}")
+            print(f"[WARN] Embedding failed for {filename}: {e}")
             continue
     
     if not embeddings:
@@ -177,8 +175,9 @@ def train_model():
     os.makedirs(os.path.dirname(EMBEDDINGS_PATH), exist_ok=True)
     np.savez(EMBEDDINGS_PATH, embeddings=embeddings_array, labels=labels_array)
     
-    print(f"[INFO] Saved {len(labels_array)} normalized embeddings")
+    print(f"[INFO] Saved {len(labels_array)} normalized embeddings to {EMBEDDINGS_PATH}")
     
+    # Reload in app
     global db_embeddings, db_labels
     db_embeddings, db_labels = load_embeddings()
 
@@ -233,9 +232,6 @@ def check_face_during_registration():
         if face_rgb.size == 0:
             return jsonify({"status": "no_face"})
 
-        # Resize for consistency
-        face_rgb = cv2.resize(face_rgb, STANDARD_FACE_SIZE)
-
         rep = DeepFace.represent(
             img_path=face_rgb,
             model_name=MODEL_NAME,
@@ -245,11 +241,12 @@ def check_face_during_registration():
         )
         emb = rep[0]["embedding"] if isinstance(rep, list) else rep["embedding"]
         emb = np.array(emb, dtype="float32")
-        emb_norm = emb / (np.linalg.norm(emb) + 1e-8)
+        emb_norm = emb / np.linalg.norm(emb)
 
         if len(db_embeddings) == 0:
             return jsonify({"status": "new_face", "message": "No registered users yet"})
 
+        # Compute L2 distances to all DB embeddings (already normalized)
         dists = np.linalg.norm(db_embeddings - emb_norm, axis=1)
 
         unique_customers = np.unique(db_labels)
@@ -303,6 +300,7 @@ def start_registration():
         if not registration_name:
             return jsonify({"status": "error", "message": "Name required"})
 
+        # Auto ID
         conn = sqlite3.connect(STUDENT_DB_PATH)
         cur = conn.cursor()
         cur.execute("SELECT MAX(id) FROM STUDENTS")
@@ -310,6 +308,7 @@ def start_registration():
         registration_id = (max_id or 0) + 1
         conn.close()
 
+        # Insert to DB
         conn = sqlite3.connect(STUDENT_DB_PATH)
         conn.execute("INSERT INTO STUDENTS (id, Name, age) VALUES (?, ?, ?)",
                      (registration_id, registration_name, registration_age))
@@ -321,6 +320,7 @@ def start_registration():
         camera_active = True
         captured_samples = 0
         recognition_status = "registering"
+
         os.makedirs("dataset", exist_ok=True)
 
         print(f"Started registration for {registration_name} (ID: {registration_id})")
@@ -391,27 +391,16 @@ def gen_frames():
             if registration_mode:
                 boxes = detect_faces_ssd(ssd_net, frame)
                 for (x1, y1, x2, y2) in boxes:
-                    face_w = x2 - x1
-                    face_h = y2 - y1
-
-                    if min(face_w, face_h) < MIN_FACE_SIZE_REG:
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 3)
-                        cv2.putText(frame, "COME CLOSER!", (x1, y1-15),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 3)
-                        continue
-
                     if captured_samples >= MAX_SAMPLES:
                         break
-
                     captured_samples += 1
-                    face_crop = frame[y1:y2, x1:x2]
-                    face_resized = cv2.resize(face_crop, STANDARD_FACE_SIZE)
+                    face = cv2.cvtColor(frame[y1:y2, x1:x2], cv2.COLOR_BGR2GRAY)
                     filename = f"dataset/user.{registration_id}.{captured_samples}.jpg"
-                    cv2.imwrite(filename, face_resized)
+                    cv2.imwrite(filename, face)
 
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 3)
-                    cv2.putText(frame, f"Good! Capturing {captured_samples}/{MAX_SAMPLES}",
-                                (x1, y1-15), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 3)
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                    cv2.putText(frame, f"Capturing {captured_samples}/{MAX_SAMPLES}",
+                                (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,0,0), 2)
 
                 if captured_samples >= MAX_SAMPLES:
                     print(f"Registration complete for {registration_name}")
@@ -443,8 +432,6 @@ def gen_frames():
                     if face_rgb.size == 0:
                         continue
 
-                    face_rgb = cv2.resize(face_rgb, STANDARD_FACE_SIZE)
-
                     try:
                         rep = DeepFace.represent(
                             img_path=face_rgb,
@@ -455,7 +442,7 @@ def gen_frames():
                         )
                         emb = rep[0]["embedding"] if isinstance(rep, list) else rep["embedding"]
                         emb = np.array(emb, dtype="float32")
-                        emb_norm = emb / (np.linalg.norm(emb) + 1e-8)
+                        emb_norm = emb / np.linalg.norm(emb)
                     except:
                         continue
 
@@ -479,23 +466,24 @@ def gen_frames():
                             name = profile[1]
                             current_face_id = best['id']
                             current_face_name = name
+                    
                             current_orders = orders_db.get_orders_by_customer_name(name)
                             recognition_status = "recognized"
 
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 4)
-                            cv2.putText(frame, f"{name} ({best['dist']:.2f})", (x1, y1-15),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)
+                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 3)
+                            cv2.putText(frame, f"{name} ({best['dist']:.2f})", (x1, y1-10),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,0), 2)
                             print(f"MATCH: {name} (ID: {best['id']})")
                             camera_active = False
                             break
                     else:
-                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 3)
-                        cv2.putText(frame, f"Unknown ({best['dist']:.2f})", (x1, y1-15),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 3)
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
+                        cv2.putText(frame, f"Unknown ({best['dist']:.2f})", (x1, y1-10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,255), 2)
 
                 time_left = int(30 - elapsed)
                 cv2.putText(frame, f"Time: {time_left}s", (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,255,255), 2)
 
             ret, buffer = cv2.imencode('.jpg', frame)
             yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')

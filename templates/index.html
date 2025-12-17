@@ -142,7 +142,7 @@
       background: white;
       border-radius: 16px;
       padding: 32px;
-      max-width: 600px;
+      max-width: 700px;
       width: 90%;
       max-height: 90vh;
       overflow-y: auto;
@@ -222,8 +222,23 @@
       box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
     }
 
+    .form-group input.error {
+      border-color: #ef4444;
+    }
+
     .form-group .required {
       color: #ef4444;
+    }
+
+    .form-group .error-text {
+      color: #ef4444;
+      font-size: 13px;
+      margin-top: 4px;
+      display: none;
+    }
+
+    .form-group .error-text.show {
+      display: block;
     }
 
     .submit-btn {
@@ -266,14 +281,18 @@
 
     .camera-preview {
       width: 100%;
-      height: 320px;
+      height: 400px;
       object-fit: cover;
+      display: none;
+    }
+
+    .camera-preview.show {
       display: block;
     }
 
     .camera-preview-placeholder {
       width: 100%;
-      height: 320px;
+      height: 400px;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -295,7 +314,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      display: flex;
+      display: none;
       flex-direction: column;
       align-items: center;
       justify-content: center;
@@ -304,6 +323,10 @@
       font-weight: 600;
       font-size: 16px;
       gap: 12px;
+    }
+
+    .camera-overlay.show {
+      display: flex;
     }
 
     .spinner {
@@ -727,17 +750,17 @@
       </div>
 
       <div id="registrationForm">
-        <!-- Camera Preview Section (Hidden initially, shown during check) -->
+        <!-- Camera Preview Section -->
         <div class="camera-preview-container" id="cameraPreviewContainer">
-          <video id="cameraPreview" class="camera-preview" autoplay playsinline style="display: none;"></video>
+          <video id="cameraPreview" class="camera-preview" autoplay playsinline></video>
           <div class="camera-preview-placeholder" id="previewPlaceholder">
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
             </svg>
-            <p>Face Verification</p>
-            <p style="font-size: 12px; margin-top: 8px;">Click "Register" to start</p>
+            <p>Face Verification Camera</p>
+            <p style="font-size: 12px; margin-top: 8px;">Will open when you click Register</p>
           </div>
-          <div class="camera-overlay" id="cameraOverlay" style="display: none;">
+          <div class="camera-overlay" id="cameraOverlay">
             <div class="spinner"></div>
             <span id="overlayText">Checking face...</span>
           </div>
@@ -747,7 +770,8 @@
 
         <div class="form-group">
           <label>Full Name <span class="required">*</span></label>
-          <input type="text" id="customerName" placeholder="Enter customer name" required />
+          <input type="text" id="customerNameInput" placeholder="Enter customer name" required />
+          <div class="error-text" id="nameError">Please enter customer name</div>
         </div>
 
         <div class="form-group">
@@ -785,7 +809,7 @@
     let checkFaceStream = null;
 
     async function startRegistrationWithCheck() {
-      const nameInput = document.getElementById("customerName");
+      const nameInput = document.getElementById("customerNameInput");
       const ageInput = document.getElementById("customerAge");
       const phoneInput = document.getElementById("customerPhone");
       const registerBtn = document.getElementById("registerBtn");
@@ -795,14 +819,20 @@
       const cameraOverlay = document.getElementById("cameraOverlay");
       const overlayText = document.getElementById("overlayText");
       const resultDiv = document.getElementById("faceCheckResult");
+      const nameError = document.getElementById("nameError");
       
       const name = nameInput.value.trim();
       const age = ageInput.value.trim();
       const phone = phoneInput.value.trim();
 
+      // Reset error states
+      nameInput.classList.remove("error");
+      nameError.classList.remove("show");
+
       // Validation
       if (!name) {
-        alert("Please enter customer name");
+        nameInput.classList.add("error");
+        nameError.classList.add("show");
         nameInput.focus();
         return;
       }
@@ -811,37 +841,52 @@
       registerBtn.disabled = true;
       registerBtn.textContent = "📸 Starting Camera...";
 
-      // Show camera preview
+      // Show camera preview container
       cameraPreviewContainer.classList.add("show");
+      previewPlaceholder.style.display = "flex";
+      cameraPreview.classList.remove("show");
+      cameraOverlay.classList.remove("show");
       resultDiv.className = "alert-box";
-      resultDiv.style.display = "none";
+
+      console.log("🎥 Requesting camera access...");
 
       try {
         // Start camera
         const stream = await navigator.mediaDevices.getUserMedia({ 
           video: { 
             width: { ideal: 1280 },
-            height: { ideal: 720 }
+            height: { ideal: 720 },
+            facingMode: "user"
           } 
         });
         
+        console.log("✅ Camera access granted");
+        
         checkFaceStream = stream;
         cameraPreview.srcObject = stream;
-        cameraPreview.style.display = "block";
-        previewPlaceholder.style.display = "none";
         
         // Wait for camera to be ready
-        await new Promise(resolve => {
-          cameraPreview.onloadedmetadata = resolve;
+        await new Promise((resolve, reject) => {
+          cameraPreview.onloadedmetadata = () => {
+            console.log("📹 Camera ready");
+            resolve();
+          };
+          setTimeout(() => reject(new Error("Camera timeout")), 10000);
         });
 
-        // Show overlay
-        cameraOverlay.style.display = "flex";
+        // Show video and hide placeholder
+        previewPlaceholder.style.display = "none";
+        cameraPreview.classList.add("show");
+        cameraOverlay.classList.add("show");
         overlayText.textContent = "Checking if face is registered...";
-        registerBtn.textContent = "📸 Checking Face...";
+        registerBtn.textContent = "📸 Analyzing Face...";
 
-        // Wait a moment for good frame
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        console.log("⏳ Waiting for good frame...");
+        
+        // Wait for good frame
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+        console.log("📸 Capturing frame...");
 
         // Capture frame
         const canvas = document.createElement('canvas');
@@ -851,6 +896,8 @@
         ctx.drawImage(cameraPreview, 0, 0);
 
         const imageData = canvas.toDataURL('image/jpeg', 0.95);
+        
+        console.log("🔍 Checking face against database...");
 
         // Check face
         const response = await fetch('/check_face_during_registration', {
@@ -859,17 +906,28 @@
           body: JSON.stringify({ image: imageData })
         });
 
-        const data = await response.json();
-        
-        // Stop camera preview
-        if (checkFaceStream) {
-          checkFaceStream.getTracks().forEach(track => track.stop());
-          checkFaceStream = null;
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.status}`);
         }
-        cameraPreview.srcObject = null;
-        cameraOverlay.style.display = "none";
+
+        const data = await response.json();
+        console.log("📥 Server response:", data);
+        
+        // Hide overlay
+        cameraOverlay.classList.remove("show");
 
         if (data.status === "already_registered") {
+          console.log("⚠️ Face already registered");
+          
+          // Stop camera
+          if (checkFaceStream) {
+            checkFaceStream.getTracks().forEach(track => track.stop());
+            checkFaceStream = null;
+          }
+          cameraPreview.srcObject = null;
+          cameraPreview.classList.remove("show");
+          previewPlaceholder.style.display = "flex";
+          
           // Already registered - show error
           resultDiv.className = "alert-box error show";
           resultDiv.innerHTML = `
@@ -881,36 +939,43 @@
           registerBtn.disabled = false;
           registerBtn.textContent = "📸 Register Customer";
           return;
+          
         } else if (data.status === "no_face") {
+          console.log("⚠️ No face detected");
+          
+          // Stop camera
+          if (checkFaceStream) {
+            checkFaceStream.getTracks().forEach(track => track.stop());
+            checkFaceStream = null;
+          }
+          cameraPreview.srcObject = null;
+          cameraPreview.classList.remove("show");
+          previewPlaceholder.style.display = "flex";
+          
           // No face detected
           resultDiv.className = "alert-box warning show";
           resultDiv.innerHTML = `
             <strong>⚠️ No Face Detected</strong><br>
             ${data.message}<br>
-            Please try again with your face clearly visible.
+            Please position your face clearly in the camera and try again.
           `;
           registerBtn.disabled = false;
           registerBtn.textContent = "📸 Try Again";
           return;
+          
         } else if (data.status === "new_face") {
+          console.log("✅ New face verified, proceeding with registration");
+          
           // New face - proceed with registration
+          overlayText.textContent = "New face verified! Starting registration...";
+          cameraOverlay.classList.add("show");
+          
           resultDiv.className = "alert-box success show";
           resultDiv.innerHTML = `✅ <strong>Face Verified!</strong> Starting registration...`;
           
-          // Hide form, show progress
-          document.getElementById("registrationForm").style.display = "none";
-          document.getElementById("registrationProgress").classList.add("show");
-
-          // Show video feed in main panel
-          const videoFeed = document.getElementById("videoFeed");
-          const cameraView = document.getElementById("cameraView");
-          const placeholder = document.getElementById("cameraPlaceholder");
-          
-          cameraView.classList.remove("hidden");
-          placeholder.style.display = "none";
-          videoFeed.style.display = "block";
-
           // Start registration
+          console.log("🔄 Calling /start_registration...");
+          
           const regResponse = await fetch("/start_registration", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -921,28 +986,50 @@
             })
           });
 
+          if (!regResponse.ok) {
+            throw new Error(`Registration failed: ${regResponse.status}`);
+          }
+
           const regData = await regResponse.json();
+          console.log("📥 Registration response:", regData);
 
           if (regData.status === "started") {
+            console.log("✅ Registration started successfully");
+            
             registrationMode = true;
+            
+            // Hide form, show progress
+            document.getElementById("registrationForm").style.display = "none";
+            document.getElementById("registrationProgress").classList.add("show");
+            
+            // Stop preview camera
+            if (checkFaceStream) {
+              checkFaceStream.getTracks().forEach(track => track.stop());
+              checkFaceStream = null;
+            }
+            
+            // Show video feed in main panel for capture
+            const videoFeed = document.getElementById("videoFeed");
+            const cameraView = document.getElementById("cameraView");
+            const placeholder = document.getElementById("cameraPlaceholder");
+            
+            cameraView.classList.remove("hidden");
+            placeholder.style.display = "none";
+            videoFeed.style.display = "block";
             videoFeed.src = "/video_feed?" + new Date().getTime();
             
             // Start polling
             registrationPollInterval = setInterval(pollRegistrationStatus, 300);
           } else {
-            alert("Error: " + (regData.message || "Failed to start registration"));
-            closeRegistrationModal();
+            throw new Error(regData.message || "Failed to start registration");
           }
+          
         } else {
-          // Error
-          resultDiv.className = "alert-box error show";
-          resultDiv.innerHTML = `<strong>❌ Error:</strong> ${data.message}`;
-          registerBtn.disabled = false;
-          registerBtn.textContent = "📸 Try Again";
+          throw new Error(data.message || "Unknown response from server");
         }
 
       } catch (error) {
-        console.error("Camera error:", error);
+        console.error("❌ Error:", error);
         
         // Stop camera if running
         if (checkFaceStream) {
@@ -950,12 +1037,16 @@
           checkFaceStream = null;
         }
         
+        cameraPreview.classList.remove("show");
+        previewPlaceholder.style.display = "flex";
+        cameraOverlay.classList.remove("show");
+        
         resultDiv.className = "alert-box error show";
         resultDiv.innerHTML = `
-          <strong>❌ Camera Error</strong><br>
-          ${error.name === 'NotAllowedError' ? 'Camera access denied. Please allow camera access.' : 
-            error.name === 'NotFoundError' ? 'No camera found. Please connect a camera.' :
-            'Failed to access camera.'}
+          <strong>❌ Error</strong><br>
+          ${error.name === 'NotAllowedError' ? 'Camera access denied. Please allow camera access in your browser.' : 
+            error.name === 'NotFoundError' ? 'No camera found. Please connect a camera device.' :
+            error.message || 'An error occurred. Please try again.'}
         `;
         registerBtn.disabled = false;
         registerBtn.textContent = "📸 Try Again";
@@ -966,7 +1057,7 @@
       document.getElementById("registrationModal").classList.add("show");
       
       // Reset form
-      document.getElementById("customerName").value = "";
+      document.getElementById("customerNameInput").value = "";
       document.getElementById("customerAge").value = "";
       document.getElementById("customerPhone").value = "";
       document.getElementById("registrationForm").style.display = "block";
@@ -974,28 +1065,36 @@
       document.getElementById("registerBtn").disabled = false;
       document.getElementById("registerBtn").textContent = "📸 Register Customer";
       
+      // Reset error states
+      document.getElementById("customerNameInput").classList.remove("error");
+      document.getElementById("nameError").classList.remove("show");
+      
       // Reset camera preview
       const cameraPreviewContainer = document.getElementById("cameraPreviewContainer");
       const cameraPreview = document.getElementById("cameraPreview");
       const previewPlaceholder = document.getElementById("previewPlaceholder");
+      const cameraOverlay = document.getElementById("cameraOverlay");
       
       cameraPreviewContainer.classList.remove("show");
-      cameraPreview.style.display = "none";
+      cameraPreview.classList.remove("show");
       previewPlaceholder.style.display = "flex";
+      cameraOverlay.classList.remove("show");
       
       // Reset alert
       const faceCheckResult = document.getElementById("faceCheckResult");
       faceCheckResult.className = "alert-box";
-      faceCheckResult.style.display = "none";
     }
 
     function closeRegistrationModal() {
+      console.log("🔒 Closing registration modal");
+      
       document.getElementById("registrationModal").classList.remove("show");
       
       // Stop camera preview
       if (checkFaceStream) {
         checkFaceStream.getTracks().forEach(track => track.stop());
         checkFaceStream = null;
+        console.log("📹 Camera stream stopped");
       }
       
       // Stop registration camera if active
@@ -1031,6 +1130,8 @@
           progressText.textContent = "✅ Registration Complete! Training model and creating orders...";
           
           clearInterval(registrationPollInterval);
+          
+          console.log("🎉 Registration completed successfully");
           
           // Show success and close modal after 3 seconds
           setTimeout(() => {
@@ -1287,6 +1388,9 @@
         checkFaceStream.getTracks().forEach(track => track.stop());
       }
     });
+
+    // Add console logging for debugging
+    console.log("✅ Script loaded successfully");
 
     // Initial load
     updateOrders();

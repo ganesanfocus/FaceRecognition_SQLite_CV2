@@ -1,5 +1,4 @@
-# facenet_trainer.py - UPDATED FOR FACENET512 + NORMALIZATION
-
+# facenet_trainer.py
 import os
 import cv2
 import numpy as np
@@ -7,10 +6,6 @@ from deepface import DeepFace
 
 DATASET_DIR = "dataset"
 EMBEDDINGS_PATH = "recognizer/facenet_embeddings.npz"
-
-# Match your app.py settings
-MODEL_NAME = "Facenet512"           # High accuracy model
-STANDARD_FACE_SIZE = (160, 160)     # Resize for consistency
 
 
 def get_image_paths(path):
@@ -21,14 +16,16 @@ def get_image_paths(path):
     ]
 
 
-def facenet_trainer():
+def main():
     os.makedirs(os.path.dirname(EMBEDDINGS_PATH), exist_ok=True)
 
-    print(f"[INFO] Preparing {MODEL_NAME} embeddings using DeepFace...")
+    print("[INFO] Preparing FaceNet embeddings using DeepFace...")
+    # NOTE: We are NOT passing 'model=' anywhere now.
+    # DeepFace will handle model loading internally.
 
     image_paths = get_image_paths(DATASET_DIR)
     if not image_paths:
-        print("[ERROR] No images found in dataset/. Register customers first.")
+        print("[ERROR] No images found in dataset/. Run dataset_creater_ssd.py first.")
         return
 
     embeddings = []
@@ -52,28 +49,21 @@ def facenet_trainer():
 
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
-        # Resize to standard size for consistency (helps accuracy)
-        img_rgb = cv2.resize(img_rgb, STANDARD_FACE_SIZE)
-
         try:
             rep = DeepFace.represent(
                 img_path=img_rgb,
-                model_name=MODEL_NAME,
-                detector_backend="skip",      # Images are already cropped faces
-                align=True,                   # Important: aligns face landmarks
+                model_name="Facenet",
+                detector_backend="skip",   # our dataset images are already cropped faces
                 enforce_detection=False
             )
 
-            # Handle both list and dict return formats
+            # DeepFace may return list or dict depending on version
             if isinstance(rep, list):
                 emb = np.array(rep[0]["embedding"], dtype="float32")
             elif isinstance(rep, dict):
                 emb = np.array(rep["embedding"], dtype="float32")
             else:
                 raise ValueError("Unexpected representation format")
-
-            # L2 normalize the embedding (critical for stable distance comparison)
-            emb = emb / (np.linalg.norm(emb) + 1e-8)
 
         except Exception as e:
             print(f"[WARN] Failed to get embedding for {filename}: {e}")
@@ -87,15 +77,13 @@ def facenet_trainer():
         print("[ERROR] No embeddings were created. Check your dataset.")
         return
 
-    embeddings_array = np.vstack(embeddings)
-    labels_array = np.array(labels, dtype="int32")
+    embeddings = np.vstack(embeddings)
+    labels = np.array(labels, dtype="int32")
 
-    # Save normalized embeddings
-    np.savez(EMBEDDINGS_PATH, embeddings=embeddings_array, labels=labels_array)
-    print(f"[INFO] Saved {len(labels_array)} normalized {MODEL_NAME} embeddings to {EMBEDDINGS_PATH}")
-    unique = np.unique(labels_array)
-    print(f"[INFO] Total customers: {len(unique)} | Samples per customer varies")
+    np.savez(EMBEDDINGS_PATH, embeddings=embeddings, labels=labels)
+    print(f"[INFO] Saved embeddings to {EMBEDDINGS_PATH}")
+    print(f"[INFO] Total embeddings: {len(labels)}")
 
 
 if __name__ == "__main__":
-    facenet_trainer()
+    main()

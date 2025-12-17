@@ -135,6 +135,16 @@ class OrderDatabase:
         self.close()
         return results
     
+    def get_orders_by_customer_id(self, customer_id):
+        """Get orders by exact customer name"""
+        self.connect()
+        self.cursor.execute('''
+            SELECT * FROM orders WHERE cust_id = ?
+        ''', (customer_id,))
+        results = self.cursor.fetchall()
+        self.close()
+        return results
+    
     def get_all_orders(self):
         """Get all orders"""
         self.connect()
